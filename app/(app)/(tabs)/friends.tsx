@@ -12,19 +12,12 @@ import FriendsCard from "@/components/FriendsCard"
 import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/constants/firebaseconfig"
 import { useAuth } from "@/context/AuthContext"
+import { User } from "@/src/interfaces"
 
-// Type definition
-interface Friend {
-    id: string
-    name: string
-    profilePic: string
-    watchlists: string[]
-    friendCount: number
-    lastActive?: string
-}
+
 
 export default function FriendsPage() {
-    const [friends, setFriends] = useState<Friend[]>([])
+    const [friends, setFriends] = useState<User[]>([])
     const [friendUids, setFriendUids] = useState<string[]>([])
     const { user } = useAuth();
     const [searchQuery, setSearchQuery] = useState<string>("")
@@ -34,8 +27,7 @@ export default function FriendsPage() {
         if (!searchQuery.trim()) return friends
         return friends.filter(
             (friend) =>
-                friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                friend.watchlists.some((list) => list.toLowerCase().includes(searchQuery.toLowerCase())),
+                friend.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
         )
     }, [friends, searchQuery])
 
@@ -48,6 +40,34 @@ export default function FriendsPage() {
 
 
     useEffect(() => {
+        const fetchFriendsData = async (friendsUidsList: string[]) => {
+            console.log("getting friends data")
+            const friendsCollectionRef = collection(db, "users")
+            const q = query(friendsCollectionRef, where(documentId(), "in", friendsUidsList))
+            getDocs(q)
+                .then((snapshot) => {
+                    if (snapshot.empty) {
+                        console.log("No matching documents.")
+                        return
+                    }
+                    console.log("Friends data fetched successfully.")
+                    const friendsData: User[] = snapshot.docs.map((doc) => {
+                        const data = doc.data()
+                        console.log(data)
+                        return {
+                            uid: doc.id, // Use document ID as UID
+                            displayName: data.displayName || "Unknown",
+                            email: data.email || "",
+                            photoURL: data.photoURL || "",
+                            friends: data.friends || [],
+                            friendCount: data.friends?.length || 0,
+                        }
+                    })
+                    setFriends(friendsData)
+                    console.log("Fetched friends:", friendsData)
+                })
+                .catch((error) => console.error("Error fetching friends:", error))
+        }
         const fetchFriends = async () => {
             if (!user?.uid) return
             const friendsRef = doc(db, "users", user.uid)
@@ -55,29 +75,11 @@ export default function FriendsPage() {
                 .then((doc) => {
                     const friends = doc.data()?.friends.map((friend: { uid: string }) => friend.uid).flat()
                     console.log(friends)
-                    setFriendUids(friends)
+                    // setFriendUids(friends)
+                    fetchFriendsData(friends)
                 })
                 .catch((error) => console.error("Error fetching friends:", error))
 
-            const friendsCollectionRef = collection(db, "users")
-            const q = query(friendsCollectionRef, where(documentId(), "in", friendUids))
-            getDocs(q)
-                .then((snapshot) => {
-                    const friendsData: Friend[] = snapshot.docs.map((doc) => {
-                        const data = doc.data()
-                        console.log(data)
-                        return {
-                            id: doc.id,
-                            name: data.displayName || "Unknown",
-                            profilePic: data.photoURL || "",
-                            watchlists: data.watchlists || [],
-                            friendCount: data.friends?.length || 0,
-                            lastActive: data.lastActive || "Unknown",
-                        }
-                    })
-                    setFriends(friendsData)
-                })
-                .catch((error) => console.error("Error fetching friends:", error))
         }
 
         fetchFriends()

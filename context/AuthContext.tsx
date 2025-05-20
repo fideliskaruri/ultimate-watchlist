@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { auth, db } from '@/constants/firebaseconfig'; // Ensure this uses initializeAuth with persistence
+import { auth, db } from '@/constants/firebaseconfig';
 import {
     onAuthStateChanged,
     signOut,
@@ -11,77 +11,88 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-
-interface AuthUser {
-    uid: string;
-    displayName: string | null;
-    email: string | null;
-    photoURL: string | null;
-}
+import { User } from '@/src/interfaces';
 
 interface AuthContextType {
-    user: AuthUser | null;
+    user: User | null;
     isLoading: boolean;
     signInWithGoogle: () => Promise<void>;
     logout: () => Promise<void>;
+    isFriend: (userId: string) => boolean; // New function to check friend status
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Configure Google Sign-In (Needs to be done once)
-// Use the Web Client ID from your Firebase project settings -> Authentication -> Sign-in method -> Google
+// Configure Google Sign-In
 GoogleSignin.configure({
     webClientId: '571116353159-gublhnhousrsaqjr25kg2ppem3r679n8.apps.googleusercontent.com',
 });
 
-
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<AuthUser | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState<boolean>(true);
 
-    // Check for existing Firebase session on mount
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
                 console.log("Firebase user detected:", firebaseUser.uid);
-                const userData: AuthUser = {
-                    uid: firebaseUser.uid,
-                    displayName: firebaseUser.displayName,
-                    email: firebaseUser.email,
-                    photoURL: firebaseUser.photoURL
-                };
-                setUser(userData);
-                const userDocRef = doc(db, "users", userData.uid)
 
-                getDoc(userDocRef).then((doc) => {
-                    if (doc.exists()) {
-                        console.log("User document data:", doc.data());
+                const userDocRef = doc(db, "users", firebaseUser.uid);
+
+                try {
+                    // Get full user data including friends list
+                    const userDoc = await getDoc(userDocRef);
+
+                    if (userDoc.exists()) {
+                        // Use the full document data including friends list
+                        const userData = userDoc.data() as User;
+                        setUser({
+                            ...userData,
+                            uid: firebaseUser.uid,
+                            displayName: firebaseUser.displayName,
+                            email: firebaseUser.email,
+                            photoURL: firebaseUser.photoURL,
+                            // Keep existing friends list or initialize as empty array
+                            friends: userData.friends || []
+                        });
+                    } else {
+                        // Create new user document
+                        const newUserData: User = {
+                            uid: firebaseUser.uid,
+                            displayName: firebaseUser.displayName,
+                            email: firebaseUser.email,
+                            photoURL: firebaseUser.photoURL,
+                            friends: [] // Initialize empty friends array
+                        };
+
+                        await setDoc(userDocRef, newUserData);
+                        setUser(newUserData);
                     }
-                    else {
-                        setDoc(userDocRef,
-                            userData,
-                        )
-                        console.log("User document created:", userData);
-                    }
+
+                    await AsyncStorage.setItem('@user_data', JSON.stringify(user));
+                } catch (error) {
+                    console.error("Error handling user document:", error);
+                    Alert.alert('Error', 'Failed to load user data');
                 }
-                ).catch((error) => {
-                    console.error("Error getting user document:", error);
-                });
-                // Storing in AsyncStorage might be redundant if relying solely on onAuthStateChanged,
-                // but can be useful for quick initial checks or offline access.
-                await AsyncStorage.setItem('@user_data', JSON.stringify(userData));
             } else {
                 console.log("No Firebase user.");
                 setUser(null);
                 await AsyncStorage.removeItem('@user_data');
             }
+
             setIsLoading(false);
         });
 
-        // Cleanup subscription
         return unsubscribe;
     }, []);
+
+    // Function to check if a user ID is in the current user's friends list
+    const isFriend = (userId: string): boolean => {
+        if (!user || !user.friends) return false;
+
+        // Check if the user ID exists in the friends array
+        return user.friends.some(friend => friend.uid === userId);
+    };
 
     const signInWithGoogle = async (): Promise<void> => {
         setIsLoading(true);
@@ -146,9 +157,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // No need to manually set user/clear storage here, onAuthStateChanged handles it
     };
 
-
     return (
-        <AuthContext.Provider value={{ user, isLoading, signInWithGoogle, logout }}>
+        <AuthContext.Provider value={{
+            user,
+            isLoading,
+            signInWithGoogle,
+            logout,
+            isFriend // Add the new function to the context
+        }}>
             {children}
         </AuthContext.Provider>
     );

@@ -1,7 +1,9 @@
 import React from 'react'
-import { Image, StyleSheet, TouchableOpacity, View } from 'react-native'
+import { Button, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { ThemedText } from './ThemedText'
 import { Feather } from '@expo/vector-icons'
+import { User } from '../src/interfaces'
+import { useAuth } from '@/context/AuthContext'
 
 interface Friend {
     id: string
@@ -13,13 +15,15 @@ interface Friend {
 }
 
 type FriendsCardProps = {
-    filteredFriends: Friend[]
+    filteredFriends: User[]
 }
 
 
 
 const FriendsCard = ({ filteredFriends }: FriendsCardProps) => {
     const [expandedFriend, setExpandedFriend] = React.useState<string | null>(null)
+    const { isFriend, user } = useAuth();
+    const [friendStatus, setFriendStatus] = React.useState<boolean>(isFriend(user?.uid || ''));
 
     const toggleExpand = (id: string) => {
         setExpandedFriend(expandedFriend === id ? null : id)
@@ -28,22 +32,18 @@ const FriendsCard = ({ filteredFriends }: FriendsCardProps) => {
     return (
         <>
             {filteredFriends.map((item) => (
-                <TouchableOpacity key={item.id} onPress={() => toggleExpand(item.id)} activeOpacity={0.8}>
-                    <View style={[styles.friendCard, expandedFriend === item.id && styles.expandedCard]}>
-                        <Image source={{ uri: item.profilePic }} style={styles.profilePic} />
+                <TouchableOpacity key={item.uid} onPress={() => toggleExpand(item.uid)} activeOpacity={0.8}>
+                    <View style={[styles.friendCard, expandedFriend === item.uid && styles.expandedCard]}>
+                        <Image source={{ uri: item.photoURL || 'https://via.placeholder.com/150' }} style={styles.profilePic} />
                         <View style={styles.friendDetails}>
-                            <ThemedText style={styles.friendName}>{item.name}</ThemedText>
-                            <ThemedText style={styles.friendStatus}>{item.lastActive}</ThemedText>
-                            <ThemedText style={styles.friendWatchlists}>
-                                {item.watchlists.join(", ")}
-                            </ThemedText>
+                            <ThemedText style={styles.friendName}>{item.displayName}</ThemedText>
                         </View>
-                        <TouchableOpacity style={styles.moreButton} onPress={() => toggleExpand(item.id)}>
-                            <Feather name={expandedFriend === item.id ? "chevron-up" : "chevron-down"} size={20} color="#444" />
+                        <TouchableOpacity style={styles.moreButton} onPress={() => toggleExpand(item.uid)}>
+                            <Feather name={expandedFriend === item.uid ? "chevron-up" : "chevron-down"} size={20} color="#444" />
                         </TouchableOpacity>
                     </View>
 
-                    {expandedFriend === item.id && (
+                    {expandedFriend === item.uid && (
                         <View style={styles.expandedOptions}>
                             <TouchableOpacity style={styles.optionButton}>
                                 <ThemedText style={styles.optionText}>Add to Watchlist</ThemedText>
@@ -51,15 +51,28 @@ const FriendsCard = ({ filteredFriends }: FriendsCardProps) => {
                             <TouchableOpacity style={styles.optionButton}>
                                 <ThemedText style={styles.optionText}>Start New Watchlist</ThemedText>
                             </TouchableOpacity>
+                            <View style={styles.buttonContainer}>
+                                <Button
+                                    title={isFriend(item.uid) ? "Following" : "Follow"}
+                                    color={`#007bff`}
+                                />
+                            </View>
                         </View>
                     )}
                 </TouchableOpacity>
             ))}</>
     )
 }
-
-
 const styles = StyleSheet.create({
+    buttonContainer: {
+        borderRadius: 5,
+        overflow: 'hidden',
+    },
+    container: {
+        flex: 1,
+        padding: 20,
+        backgroundColor: '#fff',
+    },
     friendCard: {
         flexDirection: 'row',
         padding: 10,
